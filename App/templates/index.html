@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Land Enrichment Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: #f5f7fa;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 { font-size: 1.8rem; margin-bottom: 0.25rem; }
+        .header p { font-size: 0.95rem; opacity: 0.9; }
+        
+        .stats-bar {
+            display: none; /* Stats in sidebar now */
+        }
+        
+        .sidebar-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .sidebar-stat {
+            text-align: center;
+            background: #f9fafb;
+            padding: 0.75rem;
+            border-radius: 8px;
+        }
+        
+        .sidebar-stat-value {
+            display: block;
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .sidebar-stat-label {
+            display: block;
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 0.25rem;
+        }
+        
+        .container {
+            display: flex;
+            gap: 1.5rem;
+            padding: 1rem 1.5rem;
+            max-width: 1800px;
+            margin: 0 auto;
+            height: calc(100vh - 120px);
+        }
+        
+        .sidebar {
+            width: 350px;
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            height: 100%;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .sidebar h2 { font-size: 1.3rem; margin-bottom: 1rem; }
+        .sidebar h3 { font-size: 1.1rem; margin: 1.5rem 0 1rem; color: #555; }
+        
+        .city-dropdown {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            margin-bottom: 1.5rem;
+            background: white;
+        }
+        
+        .city-dropdown:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .filter-group {
+            margin-bottom: 1.25rem;
+        }
+        
+        .filter-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #555;
+        }
+        
+        .filter-group input[type="number"] {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        
+        .range-inputs {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .range-inputs input { flex: 1; }
+        .range-inputs span { color: #666; }
+        
+        .search-btn {
+            width: 100%;
+            padding: 0.875rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-top: 1rem;
+        }
+        
+        .search-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .search-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .content {
+            flex: 1;
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        .content-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .content-header h2 {
+            font-size: 1.5rem;
+            color: #333;
+        }
+        
+        .tab-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .tab-btn {
+            padding: 0.5rem 1.5rem;
+            background: #f3f4f6;
+            border: 2px solid #d1d5db;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        
+        .tab-btn:hover {
+            background: #e5e7eb;
+        }
+        
+        .tab-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        #map {
+            height: 100%;
+            width: 100%;
+            border-radius: 8px;
+            border: 2px solid #e5e7eb;
+        }
+        
+        .tab-content {
+            display: none;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .results-section {
+            flex: 1;
+            overflow-y: auto;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #666;
+        }
+        
+        .empty-state p {
+            font-size: 1.2rem;
+        }
+        
+        /* Loader Styles */
+        .loader-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .loader-overlay.active {
+            display: flex;
+        }
+        
+        .loader-content {
+            background: white;
+            padding: 2rem 3rem;
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .loader-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f4f6;
+            border-top: 5px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loader-text {
+            font-size: 1.1rem;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        
+        .loader-subtext {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        /* Table Styles */
+        .table-container {
+            overflow-x: auto;
+        }
+        
+        .listings-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .listings-table thead {
+            background: #f9fafb;
+            position: sticky;
+            top: 0;
+        }
+        
+        .listings-table th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        
+        .listings-table td {
+            padding: 1rem;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        
+        .listings-table tbody tr:hover {
+            background: #f9fafb;
+        }
+        
+        .title-cell {
+            max-width: 300px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .listings-table a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .listings-table a:hover {
+            text-decoration: underline;
+        }
+        
+        .source-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        .source-landcom {
+            background: #10b981;
+            color: white;
+        }
+        
+        .source-landwatch {
+            background: #3b82f6;
+            color: white;
+        }
+        
+        @media (max-width: 1024px) {
+            .container { flex-direction: column; }
+            .sidebar { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏞️ Land Enrichment Dashboard</h1>
+        <p>Find land near hot builder markets - Real-time data</p>
+    </div>
+
+    <!-- Loader Overlay -->
+    <div class="loader-overlay" id="loaderOverlay">
+        <div class="loader-content">
+            <div class="loader-spinner"></div>
+            <div class="loader-text">Searching Land Listings...</div>
+            <div class="loader-subtext">Fetching data from Land.com and LandWatch</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <aside class="sidebar">
+            <!-- Stats -->
+            <div class="sidebar-stats">
+                <div class="sidebar-stat">
+                    <span class="sidebar-stat-value" id="statCities">-</span>
+                    <span class="sidebar-stat-label">Cities</span>
+                </div>
+                <div class="sidebar-stat">
+                    <span class="sidebar-stat-value" id="statBuilders">-</span>
+                    <span class="sidebar-stat-label">Builders</span>
+                </div>
+            </div>
+            
+            <h2>🏙️ Select City</h2>
+            
+            <select class="city-dropdown" id="citySelect">
+                <option value="">Loading cities...</option>
+            </select>
+
+            <h3>🎯 Filters</h3>
+            
+            <div class="filter-group">
+                <label>Price Range</label>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div style="position: relative;">
+                        <label style="font-size: 0.85rem; color: #666; margin-bottom: 0.25rem; display: block;">Min</label>
+                        <span style="position: absolute; left: 10px; bottom: 10px; color: #666; pointer-events: none;">$</span>
+                        <input type="number" id="minPrice" placeholder="0" value="0" style="width: 100%; padding-left: 25px;">
+                    </div>
+                    <div style="position: relative;">
+                        <label style="font-size: 0.85rem; color: #666; margin-bottom: 0.25rem; display: block;">Max</label>
+                        <span style="position: absolute; left: 10px; bottom: 10px; color: #666; pointer-events: none;">$</span>
+                        <input type="number" id="maxPrice" placeholder="1000000" value="1000000" style="width: 100%; padding-left: 25px;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <label>Acreage Range</label>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div>
+                        <label style="font-size: 0.85rem; color: #666; margin-bottom: 0.25rem; display: block;">Min</label>
+                        <input type="number" id="minAcres" placeholder="0" value="0" style="width: 100%;">
+                    </div>
+                    <div>
+                        <label style="font-size: 0.85rem; color: #666; margin-bottom: 0.25rem; display: block;">Max</label>
+                        <input type="number" id="maxAcres" placeholder="100" value="100" style="width: 100%;">
+                    </div>
+                </div>
+            </div>
+
+            <button class="search-btn" id="searchBtn" onclick="searchListings()">
+                🔍 Search Land
+            </button>
+        </aside>
+
+        <main class="content">
+            <div class="content-header">
+                <h2>Results (<span id="resultCount">0</span>)</h2>
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <div class="tab-buttons">
+                        <button class="tab-btn active" onclick="switchTab('map')">
+                            🗺️ Map View
+                        </button>
+                        <button class="tab-btn" onclick="switchTab('table')">
+                            📋 Table View
+                        </button>
+                    </div>
+                    <button class="tab-btn" onclick="exportCSV()" id="exportBtn" style="background: #10b981; color: white; border-color: #10b981;" disabled>
+                        📥 Export CSV
+                    </button>
+                </div>
+            </div>
+
+            <!-- MAP TAB -->
+            <div id="mapTab" class="tab-content active">
+                <div id="map"></div>
+            </div>
+
+            <!-- TABLE TAB -->
+            <div id="tableTab" class="tab-content">
+                <div class="results-section">
+                    <div id="resultsContainer">
+                        <div class="empty-state">
+                            <p>👈 Select a city and click "Search Land" to see results</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let cities = [];
+        let listings = [];
+        let builders = [];
+        let selectedCityId = null;
+        let map = null;
+        let markersLayer = null;
+        let currentTab = 'map';
+
+        // Initialize
+        async function init() {
+            await loadStats();
+            await loadCities();
+            initMap();
+        }
+
+        // Load statistics
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+                
+                document.getElementById('statCities').textContent = stats.cities.total.toLocaleString();
+                document.getElementById('statBuilders').textContent = stats.builders.total.toLocaleString();
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Load cities
+        async function loadCities() {
+            try {
+                const response = await fetch('/api/cities');
+                cities = await response.json();
+                
+                const select = document.getElementById('citySelect');
+                select.innerHTML = '<option value="">-- Select a city --</option>';
+                
+                cities.forEach(city => {
+                    const option = document.createElement('option');
+                    option.value = city.id;
+                    option.textContent = `${city.city}, ${city.state} (${city.builder_count} builders, ${city.community_count} communities)`;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading cities:', error);
+            }
+        }
+
+        // Initialize map
+        function initMap() {
+            map = L.map('map').setView([39.8283, -98.5795], 4);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 18
+            }).addTo(map);
+            
+            markersLayer = L.layerGroup().addTo(map);
+        }
+
+        // Switch tabs
+        function switchTab(tabName) {
+            currentTab = tabName;
+            
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            if (tabName === 'map') {
+                document.getElementById('mapTab').classList.add('active');
+                setTimeout(() => {
+                    if (map) map.invalidateSize();
+                }, 100);
+            } else {
+                document.getElementById('tableTab').classList.add('active');
+            }
+        }
+
+        // Search listings
+        async function searchListings() {
+            const citySelect = document.getElementById('citySelect');
+            selectedCityId = citySelect.value;
+            
+            if (!selectedCityId) {
+                alert('Please select a city');
+                return;
+            }
+            
+            const minPrice = parseInt(document.getElementById('minPrice').value) || 0;
+            const maxPrice = parseInt(document.getElementById('maxPrice').value) || 1000000;
+            const minAcres = parseInt(document.getElementById('minAcres').value) || 0;
+            const maxAcres = parseInt(document.getElementById('maxAcres').value) || 100;
+            
+            // Show loader
+            document.getElementById('loaderOverlay').classList.add('active');
+            document.getElementById('searchBtn').disabled = true;
+            
+            try {
+                // Fetch listings
+                const listingsResponse = await fetch(`/api/listings?city_id=${selectedCityId}&min_price=${minPrice}&max_price=${maxPrice}&min_acres=${minAcres}&max_acres=${maxAcres}`);
+                listings = await listingsResponse.json();
+                
+                // Fetch builders
+                const buildersResponse = await fetch(`/api/builders?city_id=${selectedCityId}`);
+                builders = await buildersResponse.json();
+                
+                // Update UI
+                document.getElementById('resultCount').textContent = listings.length;
+                document.getElementById('exportBtn').disabled = listings.length === 0;
+                renderListings();
+                updateMap();
+                
+            } catch (error) {
+                console.error('Error searching:', error);
+                alert('Error fetching listings. Please try again.');
+            } finally {
+                // Hide loader
+                document.getElementById('loaderOverlay').classList.remove('active');
+                document.getElementById('searchBtn').disabled = false;
+            }
+        }
+
+        // Update map
+        function updateMap() {
+            markersLayer.clearLayers();
+            
+            if (listings.length === 0) return;
+            
+            const bounds = [];
+            
+            // Add land markers (green)
+            listings.forEach(listing => {
+                if (listing.latitude && listing.longitude) {
+                    const marker = L.circleMarker([listing.latitude, listing.longitude], {
+                        radius: 6,
+                        fillColor: '#10b981',
+                        color: '#fff',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    });
+                    
+                    marker.bindPopup(`
+                        <strong>${listing.title}</strong><br>
+                        <span class="source-badge source-${listing.source.toLowerCase().replace('.', '')}">${listing.source}</span><br>
+                        ${listing.city}, ${listing.state}<br>
+                        ${listing.acres ? listing.acres.toFixed(1) + ' acres' : 'N/A'}<br>
+                        ${listing.price ? '$' + listing.price.toLocaleString() : 'N/A'}<br>
+                        <a href="${listing.listing_url}" target="_blank">View Listing →</a>
+                    `);
+                    
+                    marker.addTo(markersLayer);
+                    bounds.push([listing.latitude, listing.longitude]);
+                }
+            });
+            
+            // Add builder markers (red)
+            builders.forEach(builder => {
+                if (builder.latitude && builder.longitude) {
+                    const marker = L.circleMarker([builder.latitude, builder.longitude], {
+                        radius: 8,
+                        fillColor: '#ef4444',
+                        color: '#fff',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.9
+                    });
+                    
+                    marker.bindPopup(`
+                        <strong>${builder.project_name}</strong><br>
+                        ${builder.builder_name}<br>
+                        ${builder.city}, ${builder.state}
+                    `);
+                    
+                    marker.addTo(markersLayer);
+                    bounds.push([builder.latitude, builder.longitude]);
+                }
+            });
+            
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+        }
+
+        // Render listings table
+        function renderListings() {
+            const container = document.getElementById('resultsContainer');
+            
+            if (listings.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>No listings found. Try adjusting your filters.</p></div>';
+                return;
+            }
+            
+            container.innerHTML = `
+                <div class="table-container">
+                    <table class="listings-table">
+                        <thead>
+                            <tr>
+                                <th>Source</th>
+                                <th>Title</th>
+                                <th>Location</th>
+                                <th>Acres</th>
+                                <th>Price</th>
+                                <th>Latitude</th>
+                                <th>Longitude</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${listings.map(listing => `
+                                <tr>
+                                    <td><span class="source-badge source-${listing.source.toLowerCase().replace('.', '')}">${listing.source}</span></td>
+                                    <td class="title-cell">${listing.title || 'N/A'}</td>
+                                    <td>${listing.city}, ${listing.state}</td>
+                                    <td>${listing.acres ? listing.acres.toFixed(1) : 'N/A'}</td>
+                                    <td>${listing.price ? '$' + listing.price.toLocaleString() : 'N/A'}</td>
+                                    <td>${listing.latitude ? listing.latitude.toFixed(6) : 'N/A'}</td>
+                                    <td>${listing.longitude ? listing.longitude.toFixed(6) : 'N/A'}</td>
+                                    <td>
+                                        <a href="${listing.listing_url}" target="_blank" rel="noopener noreferrer">
+                                            View →
+                                        </a>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        // Export to CSV
+        function exportCSV() {
+            if (listings.length === 0) {
+                alert('No data to export');
+                return;
+            }
+            
+            // Create CSV header
+            const headers = ['Source', 'Title', 'City', 'State', 'Zip', 'County', 'Acres', 'Price', 'Latitude', 'Longitude', 'Listing URL'];
+            
+            // Create CSV rows
+            const rows = listings.map(listing => [
+                listing.source || '',
+                (listing.title || '').replace(/"/g, '""'), // Escape quotes
+                listing.city || '',
+                listing.state || '',
+                listing.zip || '',
+                listing.county || '',
+                listing.acres || '',
+                listing.price || '',
+                listing.latitude || '',
+                listing.longitude || '',
+                listing.listing_url || ''
+            ]);
+            
+            // Combine header and rows
+            const csvContent = [
+                headers.join(','),
+                ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+            ].join('\n');
+            
+            // Create blob and download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            const citySelect = document.getElementById('citySelect');
+            const selectedCity = citySelect.options[citySelect.selectedIndex].text.split(' (')[0];
+            const timestamp = new Date().toISOString().slice(0, 10);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', `land_listings_${selectedCity.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Initialize on page load
+        init();
+    </script>
+</body>
+</html>
