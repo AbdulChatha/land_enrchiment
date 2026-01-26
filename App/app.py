@@ -8,6 +8,7 @@ from flask import Flask, render_template, jsonify, request
 import sqlite3
 import time
 from curl_cffi import requests
+from math import radians, cos, sin, asin, sqrt
 
 app = Flask(__name__)
 DB_PATH = 'builders.db'
@@ -26,6 +27,43 @@ STATE_CODE_TO_NAME = {
     'WV': 'west-virginia', 'WI': 'wisconsin', 'DC': 'washington-dc'
 }
 
+# Property type mappings
+LANDCOM_PROPERTY_TYPES = {
+    'homesite': 8,
+    'recreational': 4,
+    'waterfront': 3584,
+    'undeveloped': 32,
+    'commercial': 64
+}
+
+LANDWATCH_PROPERTY_TYPES = {
+    'recreational': 4,
+    'undeveloped': 32,
+    'commercial': 64,
+    'homesite': 4096,
+    'waterfront': 3584
+}
+
+
+def haversine(lon1, lat1, lon2, lat2):
+    """
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees)
+    Returns distance in miles
+    """
+    # Convert decimal degrees to radians
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+    
+    # Haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+    
+    # Radius of earth in miles
+    miles = 3956 * c
+    return round(miles, 2)
+
 
 def get_db():
     """Get database connection"""
@@ -38,19 +76,28 @@ def get_db():
 # LAND.COM SCRAPER
 # ============================================================================
 
-def scrape_land_com(city, state_code, min_price=0, max_price=1000000, min_acres=0, max_acres=100):
+def scrape_land_com(city, state_code, min_price=0, max_price=1000000, min_acres=0, max_acres=100, property_types=None):
     """
     Scrape Land.com API with pagination
-    URL: /{city}-{state}/all-land/no-house/for-sale/{price}/{acres}/is-active/type-3692/
+    URL: /{city}-{state}/all-land/no-house/for-sale/{price}/{acres}/is-active/type-{number}/
     """
-    print(f"\n🌐 Scraping Land.com: {city}, {state_code}")
+    print(f"\n🌍 Scraping Land.com: {city}, {state_code}")
+    
+    # Calculate property type filter
+    type_filter = 3692  # Default (all types)
+    if property_types:
+        type_sum = sum(LANDCOM_PROPERTY_TYPES.get(pt, 0) for pt in property_types)
+        if type_sum > 0:
+            type_filter = type_sum
     
     # Build URL components
     city_slug = city.lower().replace(' ', '-')
     price_filter = f"under-{max_price}"
     acres_filter = f"under-{max_acres}-acres" if max_acres < 1000 else "any-size"
     
-    base_url = f"https://www.land.com/api/property/search/0/{city_slug}-{state_code}/all-land/no-house/for-sale/{price_filter}/{acres_filter}/is-active/type-3692/"
+    base_url = f"https://www.land.com/api/property/search/0/{city_slug}-{state_code}/all-land/no-house/for-sale/{price_filter}/{acres_filter}/is-active/type-{type_filter}/"
+    
+    print(f"   Property type filter: {type_filter}")
     
     all_listings = []
     
@@ -72,7 +119,7 @@ def scrape_land_com(city, state_code, min_price=0, max_price=1000000, min_acres=
         listings_per_page = len(properties)
         
         if listings_per_page > 0:
-            total_pages = min((total_count + listings_per_page - 1) // listings_per_page, 20)  # Max 20 pages (500 listings)
+            total_pages = min((total_count + listings_per_page - 1) // listings_per_page, 20)  # Max 20 pages
             print(f"   Total: {total_count} listings, fetching {total_pages} pages")
         else:
             print(f"   No listings found")
@@ -155,19 +202,28 @@ def scrape_land_com(city, state_code, min_price=0, max_price=1000000, min_acres=
 # LANDWATCH SCRAPER
 # ============================================================================
 
-def scrape_landwatch(city, state_code, min_price=0, max_price=1000000, min_acres=0, max_acres=100):
+def scrape_landwatch(city, state_code, min_price=0, max_price=1000000, min_acres=0, max_acres=100, property_types=None):
     """
     Scrape LandWatch API with pagination
-    URL: /{state}-land-for-sale/{city}/prop-types-7780/price-{min}-{max}/acres-{min}-{max}/available
+    URL: /{state}-land-for-sale/{city}/prop-types-{number}/price-{min}-{max}/acres-{min}-{max}/available
     """
-    print(f"\n🌐 Scraping LandWatch: {city}, {state_code}")
+    print(f"\n🌍 Scraping LandWatch: {city}, {state_code}")
+    
+    # Calculate property type filter
+    type_filter = 7780  # Default (all types)
+    if property_types:
+        type_sum = sum(LANDWATCH_PROPERTY_TYPES.get(pt, 0) for pt in property_types)
+        if type_sum > 0:
+            type_filter = type_sum
     
     # Convert state code to name
     state_name = STATE_CODE_TO_NAME.get(state_code, state_code.lower())
     city_slug = city.lower().replace(' ', '-')
     
     # Build URL
-    base_url = f"https://www.landwatch.com/api/property/search/1113/{state_name}-land-for-sale/{city_slug}/prop-types-7780/price-{min_price}-{max_price}/acres-{min_acres}-{max_acres}/available"
+    base_url = f"https://www.landwatch.com/api/property/search/1113/{state_name}-land-for-sale/{city_slug}/prop-types-{type_filter}/price-{min_price}-{max_price}/acres-{min_acres}-{max_acres}/available"
+    
+    print(f"   Property type filter: {type_filter}")
     
     all_listings = []
     
@@ -194,7 +250,7 @@ def scrape_landwatch(city, state_code, min_price=0, max_price=1000000, min_acres
         listings_per_page = len(properties)
         
         if listings_per_page > 0:
-            total_pages = min((total_count + listings_per_page - 1) // listings_per_page, 20)  # Max 20 pages (500 listings)
+            total_pages = min((total_count + listings_per_page - 1) // listings_per_page, 20)  # Max 20 pages
             print(f"   Total: {total_count} listings, fetching {total_pages} pages")
         else:
             print(f"   No listings found")
@@ -296,6 +352,8 @@ def get_cities():
             id,
             city,
             state,
+            latitude,
+            longitude,
             city_rating,
             rating_category,
             community_count,
@@ -323,6 +381,8 @@ def get_listings():
     max_price = request.args.get('max_price', 1000000, type=int)
     min_acres = request.args.get('min_acres', 0, type=int)
     max_acres = request.args.get('max_acres', 100, type=int)
+    sources = request.args.getlist('sources')  # ['landcom', 'landwatch']
+    property_types = request.args.getlist('property_types')  # ['homesite', 'recreational', etc.]
     
     if not city_id:
         return jsonify({'error': 'City ID required'}), 400
@@ -330,7 +390,7 @@ def get_listings():
     # Get city details from database
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT city, state FROM city_ratings WHERE id = ?", (city_id,))
+    cursor.execute("SELECT city, state, latitude, longitude FROM city_ratings WHERE id = ?", (city_id,))
     city_row = cursor.fetchone()
     conn.close()
     
@@ -339,19 +399,39 @@ def get_listings():
     
     city = city_row['city']
     state = city_row['state']
+    city_lat = city_row['latitude']
+    city_lon = city_row['longitude']
     
     print(f"\n{'='*60}")
     print(f"🔍 Searching land in {city}, {state}")
     print(f"   Price: ${min_price:,} - ${max_price:,}")
     print(f"   Acres: {min_acres} - {max_acres}")
+    print(f"   Sources: {sources if sources else 'All'}")
+    print(f"   Property Types: {property_types if property_types else 'All'}")
     print(f"{'='*60}")
     
-    # Scrape both APIs
-    landcom_listings = scrape_land_com(city, state, min_price, max_price, min_acres, max_acres)
-    landwatch_listings = scrape_landwatch(city, state, min_price, max_price, min_acres, max_acres)
+    # Scrape selected sources (default to both)
+    all_listings = []
     
-    # Combine results
-    all_listings = landcom_listings + landwatch_listings
+    if not sources or 'landcom' in sources:
+        landcom_listings = scrape_land_com(city, state, min_price, max_price, min_acres, max_acres, property_types)
+        all_listings.extend(landcom_listings)
+    
+    if not sources or 'landwatch' in sources:
+        landwatch_listings = scrape_landwatch(city, state, min_price, max_price, min_acres, max_acres, property_types)
+        all_listings.extend(landwatch_listings)
+    
+    # Calculate distance to city center for each listing
+    if city_lat and city_lon:
+        for listing in all_listings:
+            if listing['latitude'] and listing['longitude']:
+                distance = haversine(city_lon, city_lat, listing['longitude'], listing['latitude'])
+                listing['distance_to_center'] = distance
+            else:
+                listing['distance_to_center'] = None
+    else:
+        for listing in all_listings:
+            listing['distance_to_center'] = None
     
     print(f"\n📊 Total listings found: {len(all_listings)}")
     print(f"{'='*60}\n")
@@ -421,9 +501,9 @@ if __name__ == '__main__':
     print("="*60)
     print("🏞️  Land Enrichment App Starting...")
     print("="*60)
-    print("\n📍 Server: http://localhost:8080")
+    print("\n🌐 Server: http://localhost:8080")
     print("📊 Database: builders.db")
-    print("🌐 Live APIs: Land.com + LandWatch")
+    print("🌍 Live APIs: Land.com + LandWatch")
     print("\n✅ Open your browser to http://localhost:8080\n")
     
     app.run(debug=True, host='0.0.0.0', port=8080)

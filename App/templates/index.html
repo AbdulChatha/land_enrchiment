@@ -25,10 +25,6 @@
         .header h1 { font-size: 1.8rem; margin-bottom: 0.25rem; }
         .header p { font-size: 0.95rem; opacity: 0.9; }
         
-        .stats-bar {
-            display: none; /* Stats in sidebar now */
-        }
-        
         .sidebar-stats {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -69,7 +65,7 @@
         }
         
         .sidebar {
-            width: 350px;
+            width: 380px;
             background: white;
             border-radius: 12px;
             padding: 1.5rem;
@@ -117,14 +113,29 @@
             font-size: 1rem;
         }
         
-        .range-inputs {
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .checkbox-item {
             display: flex;
             align-items: center;
             gap: 0.5rem;
         }
         
-        .range-inputs input { flex: 1; }
-        .range-inputs span { color: #666; }
+        .checkbox-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .checkbox-item label {
+            margin: 0;
+            font-weight: normal;
+            cursor: pointer;
+        }
         
         .search-btn {
             width: 100%;
@@ -394,6 +405,48 @@
 
             <h3>🎯 Filters</h3>
             
+            <!-- Source Filters -->
+            <div class="filter-group">
+                <label>Data Sources</label>
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="sourceLandcom" value="landcom" checked>
+                        <label for="sourceLandcom">Land.com</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="sourceLandwatch" value="landwatch" checked>
+                        <label for="sourceLandwatch">LandWatch</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Property Type Filters -->
+            <div class="filter-group">
+                <label>Property Types</label>
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="typeHomesite" value="homesite" checked>
+                        <label for="typeHomesite">Homesite</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="typeRecreational" value="recreational" checked>
+                        <label for="typeRecreational">Recreational</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="typeWaterfront" value="waterfront" checked>
+                        <label for="typeWaterfront">Waterfront</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="typeUndeveloped" value="undeveloped" checked>
+                        <label for="typeUndeveloped">Undeveloped</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="typeCommercial" value="commercial">
+                        <label for="typeCommercial">Commercial</label>
+                    </div>
+                </div>
+            </div>
+            
             <div class="filter-group">
                 <label>Price Range</label>
                 <div style="display: flex; flex-direction: column; gap: 0.75rem;">
@@ -549,6 +602,25 @@
             }
         }
 
+        // Get selected sources
+        function getSelectedSources() {
+            const sources = [];
+            if (document.getElementById('sourceLandcom').checked) sources.push('landcom');
+            if (document.getElementById('sourceLandwatch').checked) sources.push('landwatch');
+            return sources;
+        }
+
+        // Get selected property types
+        function getSelectedPropertyTypes() {
+            const types = [];
+            if (document.getElementById('typeHomesite').checked) types.push('homesite');
+            if (document.getElementById('typeRecreational').checked) types.push('recreational');
+            if (document.getElementById('typeWaterfront').checked) types.push('waterfront');
+            if (document.getElementById('typeUndeveloped').checked) types.push('undeveloped');
+            if (document.getElementById('typeCommercial').checked) types.push('commercial');
+            return types;
+        }
+
         // Search listings
         async function searchListings() {
             const citySelect = document.getElementById('citySelect');
@@ -563,14 +635,34 @@
             const maxPrice = parseInt(document.getElementById('maxPrice').value) || 1000000;
             const minAcres = parseInt(document.getElementById('minAcres').value) || 0;
             const maxAcres = parseInt(document.getElementById('maxAcres').value) || 100;
+            const sources = getSelectedSources();
+            const propertyTypes = getSelectedPropertyTypes();
+            
+            if (sources.length === 0) {
+                alert('Please select at least one data source');
+                return;
+            }
             
             // Show loader
             document.getElementById('loaderOverlay').classList.add('active');
             document.getElementById('searchBtn').disabled = true;
             
             try {
+                // Build query string
+                const params = new URLSearchParams({
+                    city_id: selectedCityId,
+                    min_price: minPrice,
+                    max_price: maxPrice,
+                    min_acres: minAcres,
+                    max_acres: maxAcres
+                });
+                
+                // Add array parameters
+                sources.forEach(s => params.append('sources', s));
+                propertyTypes.forEach(pt => params.append('property_types', pt));
+                
                 // Fetch listings
-                const listingsResponse = await fetch(`/api/listings?city_id=${selectedCityId}&min_price=${minPrice}&max_price=${maxPrice}&min_acres=${minAcres}&max_acres=${maxAcres}`);
+                const listingsResponse = await fetch(`/api/listings?${params.toString()}`);
                 listings = await listingsResponse.json();
                 
                 // Fetch builders
@@ -613,12 +705,17 @@
                         fillOpacity: 0.8
                     });
                     
+                    const distanceText = listing.distance_to_center 
+                        ? `Distance to center: ${listing.distance_to_center} mi<br>` 
+                        : '';
+                    
                     marker.bindPopup(`
                         <strong>${listing.title}</strong><br>
                         <span class="source-badge source-${listing.source.toLowerCase().replace('.', '')}">${listing.source}</span><br>
                         ${listing.city}, ${listing.state}<br>
                         ${listing.acres ? listing.acres.toFixed(1) + ' acres' : 'N/A'}<br>
                         ${listing.price ? '$' + listing.price.toLocaleString() : 'N/A'}<br>
+                        ${distanceText}
                         <a href="${listing.listing_url}" target="_blank">View Listing →</a>
                     `);
                     
@@ -674,6 +771,7 @@
                                 <th>Location</th>
                                 <th>Acres</th>
                                 <th>Price</th>
+                                <th>Distance to Center</th>
                                 <th>Latitude</th>
                                 <th>Longitude</th>
                                 <th>Action</th>
@@ -687,6 +785,7 @@
                                     <td>${listing.city}, ${listing.state}</td>
                                     <td>${listing.acres ? listing.acres.toFixed(1) : 'N/A'}</td>
                                     <td>${listing.price ? '$' + listing.price.toLocaleString() : 'N/A'}</td>
+                                    <td>${listing.distance_to_center ? listing.distance_to_center + ' mi' : 'N/A'}</td>
                                     <td>${listing.latitude ? listing.latitude.toFixed(6) : 'N/A'}</td>
                                     <td>${listing.longitude ? listing.longitude.toFixed(6) : 'N/A'}</td>
                                     <td>
@@ -710,7 +809,7 @@
             }
             
             // Create CSV header
-            const headers = ['Source', 'Title', 'City', 'State', 'Zip', 'County', 'Acres', 'Price', 'Latitude', 'Longitude', 'Listing URL'];
+            const headers = ['Source', 'Title', 'City', 'State', 'Zip', 'County', 'Acres', 'Price', 'Distance to Center (mi)', 'Latitude', 'Longitude', 'Listing URL'];
             
             // Create CSV rows
             const rows = listings.map(listing => [
@@ -722,6 +821,7 @@
                 listing.county || '',
                 listing.acres || '',
                 listing.price || '',
+                listing.distance_to_center || '',
                 listing.latitude || '',
                 listing.longitude || '',
                 listing.listing_url || ''
